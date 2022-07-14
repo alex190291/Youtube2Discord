@@ -14,9 +14,9 @@ A simple yt-dlp based music bot for discord written in Python.
 - asyncio
 
 ## Installation
-Create and add a bot to your server via the discord developer portal and save the API key.  
-Copy the API key to the "token" variable in between the quotation marks in main.py.  
-Run the script on any pc with active internet connection.  
+- Create and add a bot to your server via the discord developer portal and save the API key.  
+- Copy the API key to the "token" variable in between the quotation marks in main.py.  
+- Run main.py on any pc with active internet connection.  
 
 ## Usage/Commands
 - !play "link/search term"  
