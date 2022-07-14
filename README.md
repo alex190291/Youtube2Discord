@@ -31,11 +31,11 @@ adds song to queue
 - !skip  
 skips to next song in queue
 
-- !volume 1-100
+- !volume 1-100  
 sets global volume of the bot
 
-- !join
+- !join  
 bot joins the users channel
 
-- !help
+- !help  
 prints all available commands with explanation into the chatroom from which it was called
