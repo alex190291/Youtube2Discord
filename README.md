@@ -37,6 +37,9 @@ adds song to queue
 - !skip  
 skips to next song in queue
 
+- !clear  
+clears the queue
+
 - !volume 1-100  
 sets global volume of the bot
 
