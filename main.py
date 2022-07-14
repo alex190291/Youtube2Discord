@@ -170,7 +170,9 @@ class Music(commands.Cog):                                              #music b
     
     @commands.command()
     async def kick(self, ctx):
-        '''disconnects bot from voice channel'''         
+        '''disconnects bot from voice channel and clears the queue'''
+        global queue
+        queue = []  
         voice_client = discord.utils.get(self.bot.voice_clients)
         await voice_client.disconnect()
 
