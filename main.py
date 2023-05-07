@@ -1,13 +1,16 @@
 import asyncio
-import discord
 import yt_dlp
+import discord
 from discord.ext import commands
 
-token = 'YOUR API KEY HERE!'
+queue = []
+token = ''
 
+# Suppress noise about console usage from errors
+yt_dlp.utils.bug_reports_message = lambda: ""
 
 ytdl_format_options = {
-    "format": "bestaudio",
+    "format": "bestaudio/best",
     "outtmpl": "%(extractor)s-%(id)s-%(title)s.%(ext)s",
     "restrictfilenames": True,
     "noplaylist": True,
@@ -17,18 +20,17 @@ ytdl_format_options = {
     "quiet": True,
     "no_warnings": True,
     "default_search": "auto",
-    "source_address": "0.0.0.0",
-    }
+    "source_address": (
+        "0.0.0.0"
+    ),  # Bind to ipv4 since ipv6 addresses cause issues at certain times
+}
 
-ffmpeg_options = {"options": "-vn", 'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',}
+ffmpeg_options = {"options": "-vn"}
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
-queue = []
-ind = 0 
 
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    '''youtube downloader class'''                         
-    def __init__(self, source, *, data, volume=0.5):        
+    def __init__(self, source: discord.AudioSource, *, data: dict, volume: float = 0.5):
         super().__init__(source, volume)
         self.data = data
         self.title = data.get("title")
@@ -36,148 +38,116 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
-        '''method for downloading or streaming music from youtube (List detection is BUGGY)'''           
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        data = await loop.run_in_executor(
+            None, lambda: ytdl.extract_info(url, download=not stream))
+
         if "entries" in data:
-            # take first item from a playlist
+            # Takes the first item from a playlist
             data = data["entries"][0]
+
         filename = data["url"] if stream else ytdl.prepare_filename(data)
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 
-class Music(commands.Cog):                                              #music bot class
-    def __init__(self, bot):
-        self.bot = bot          
-   
-   
-    async def start_playing(self):
-        '''audioplayer function that is called from commands and the "after=" attribute of voice_client.play()'''
+class Music(commands.Cog):
+    def __init__(self, bot_: commands.Bot):
+        self.bot = bot_
+
+    @commands.command()
+    async def join(self, ctx: commands.Context, *, channel: discord.VoiceChannel):
+        """Joins a voice channel"""
+        if ctx.voice_client is not None:
+            return await ctx.voice_client.move_to(channel)
+        await channel.connect()
+
+    @commands.command()
+    async def play(self, ctx: commands.Context, *, url: str):
+        """Plays from a url (almost anything youtube_dl supports)"""
+        global queue                        
+        async with ctx.typing():
+            player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=False)
+            ctx.voice_client.play(player, after=lambda e: self.play_next(ctx))                
+        await ctx.send(f"Now playing: {player.title}")
+        
+
+
+    def play_next(self, ctx: commands.Context):
         global queue
-        global ind 
-        global q1
-        ind = ind+1       
-        
-        voice_client = discord.utils.get(self.bot.voice_clients)            
         if len(queue) > 0:
-            print('DEBUG!!!! len queue > 0')               
-            if not voice_client.is_playing():            
-                print('\n\n\nDEBUG COUNTER: '+str(ind)+'\n\n\n')
-                print('DEBUG start_playing queue:   '+str(queue)) 
-                try:
-                    global q1
-                    q1 = queue[0]            
-                    queue.pop(0)
-                    voice_client = discord.utils.get(self.bot.voice_clients)            
-                    voice_client.play(q1, after=lambda _: asyncio.run_coroutine_threadsafe(
-                                    coro=self.start_playing(),
-                                    loop=voice_client.loop
-                                    ).result()) 
-                except IndexError:
-                    print('\n\n\nDEBUG!!! queue empty!!!!\n\n\n')
-                    await voice_client.disconnect()                    
-                                                
-                print('DEBUG q1:   '+str(q1))
-            
-            else:
-                pass
-        else: 
-            print('DEBUG!!!! len queue < 1')
-            await voice_client.disconnect()
-     
-     
+            player = queue.pop(0)
+            ctx.voice_client.play(player, after=lambda e: self.play_next(ctx))
+    
     @commands.command()
-    async def join(self, ctx):
-        '''joins your voice channel'''
-        channel = discord.VoiceChannel = ctx.message.author.voice.channel
-        if ctx.voice_client is not None:
-            return await ctx.voice_client.move_to(channel)
-        await channel.connect() 
-        
-                
+    async def clear(self, ctx: commands.Context):
+        '''clear queue'''        
+        global queue
+        queue = []
+        await ctx.send(f"**Queue cleared!**")
+
     @commands.command()
-    async def play(self, ctx, *, url): 
-        '''joins your channel and plays song'''    
-        channel = discord.VoiceChannel = ctx.message.author.voice.channel
-        if ctx.voice_client is not None:
-            return await ctx.voice_client.move_to(channel)
-        await channel.connect()                      
-        player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)              
-        queue.append(player)            
-        print('DEBUG self.queue:   '+str(queue))
-        await ctx.send(f':mag_right: **Searching for** ``' + url + '``\n**Now Playing:** ``{}'.format(player.title) + "``")
-        await self.start_playing()
-            
-                
-    @commands.command()
-    async def q(self,ctx,* , url):
+    async def q(self,ctx: commands.Context, *, url: str):
         '''add song to queue'''
         global queue
-        player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)               
+        player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=False)               
         print('DEBUG!!!!! q')
         queue.append(player)
         print('DEBUG global queue:   '+str(queue)) 
-        await ctx.send(f':mag_right: **Searching for** ``' + url + '``\n**Added to queue:** ``{}'.format(player.title) + "``")
+        await ctx.send(f':mag_right: **Searching for:** ``' + url + '``\n**Added to queue:** ``{}'.format(player.title) + "``")
         print('DEBUG:   '+str(len(queue)))
-        
     
     @commands.command()
-    async def skip(self,ctx):
-        '''skips to next song in queue'''
+    async def skip(self, ctx: commands.Context):
+        """Skips the current song"""
         global queue
-        voice_client = discord.utils.get(self.bot.voice_clients)
-        print('DEBUG skip queue before append:   '+str(queue))
-        
         if len(queue) > 0:
-            queue.append(queue[0])
-            print('DEBUG skip queue after append:   '+str(queue))            
-            voice_client.stop()
-            await self.start_playing()               
+            ctx.voice_client.stop()            
+            await ctx.send(f"**Skipped to the next song in the queue.**")
         else:
-            await voice_client.disconnect()
-              
-        print('DEBUG skip queue end:   '+str(queue))
-        
-        
-    @commands.command()
-    async def pause(self, ctx):
-        '''pauses playback'''       
-        voice_client = discord.utils.get(self.bot.voice_clients) 
-        voice_client.pause()
-        
+            await ctx.send(f"**Last song in queue... Stopping playback!**")
 
     @commands.command()
-    async def resume(self,ctx):
-        '''resumes playback''' 
-        voice_client = discord.utils.get(self.bot.voice_clients)
-        voice_client.resume()
+    async def vol(self, ctx: commands.Context, volume: int):
+        """Changes the player's volume"""
 
-           
-    @commands.command()
-    async def volume(self, ctx, volume: int):
-        '''sets volume for everyone (0-100)'''
-        voice_client = discord.utils.get(self.bot.voice_clients)
-        voice_client.source.volume = volume / 100
+        if ctx.voice_client is None:
+            return await ctx.send("Not connected to a voice channel.")
+
+        ctx.voice_client.source.volume = volume / 100
         await ctx.send(f"Changed volume to {volume}%")
 
-
     @commands.command()
-    async def clear(self, ctx):
+    async def stop(self, ctx: commands.Context):
+        """Stops and disconnects the bot from voice"""
         global queue
-        queue = []  
-        await ctx.send(f'Queue cleared!')     
-        
+        queue = []
+        await ctx.voice_client.disconnect(force=True)
+
+    @play.before_invoke
+    @skip.before_invoke
     
-    @commands.command()
-    async def kick(self, ctx):
-        '''disconnects bot from voice channel and clears the queue'''
-        global queue
-        queue = []  
-        voice_client = discord.utils.get(self.bot.voice_clients)
-        await voice_client.disconnect()
+    async def ensure_voice(self, ctx: commands.Context):
+        if ctx.voice_client is None:
+            if ctx.author.voice:
+                await ctx.author.voice.channel.connect()
+            else:
+                await ctx.send("You are not connected to a voice channel.")
+                raise commands.CommandError("Author not connected to a voice channel.")
+        elif ctx.voice_client.is_playing():
+            ctx.voice_client.stop()
 
+intents = discord.Intents.default()
+intents.message_content = True
 
-if __name__ == '__main__':
-    bot = commands.Bot(command_prefix="!", description="Ganjagaming Music Bot 1")
-    bot.add_cog(Music(bot))
-    bot.run(token)
+bot = commands.Bot(
+    command_prefix=commands.when_mentioned_or("!"),
+    description="Relatively simple music bot example",
+    intents=intents,)
+
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    print("------")
+
+bot.add_cog(Music(bot))
+bot.run(token)
