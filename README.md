@@ -22,12 +22,6 @@ A simple yt-dlp based music bot for discord written in Python.
 - !play "link/search term"  
 plays song from entered link/search term in the users channel  
 
-- !pause  
-pauses playback
-
-- !resume  
-resumes paused playback
-
 - !kick  
 stops current song, clears playlist and kicks the bot
 
@@ -45,6 +39,3 @@ sets global volume of the bot
 
 - !join  
 bot joins the users channel
-
-- !help  
-prints all available commands with explanation into the chatroom from which it was called
